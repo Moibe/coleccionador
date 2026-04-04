@@ -1,62 +1,71 @@
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/stamp.dart';
 
 /// Servicio para manejar el almacenamiento local con Hive.
-/// Guarda los stamps como JSON (Map) en una Box de Hive.
+/// Guarda los IDs de las estampas que el usuario posee y cuántas repetidas tiene.
+/// Valor almacenado: 0 = la tiene (sin repetidas), 1+ = cantidad de repetidas.
 class StorageService {
-  static const String _stampsBox = 'stamps';
+  static const String _ownedBox = 'owned_stamps';
 
   /// Inicializar Hive. Debe llamarse antes de usar el servicio.
   static Future<void> init() async {
     await Hive.initFlutter();
   }
 
-  /// Abrir la caja de stamps.
+  /// Abrir la caja de estampas poseídas.
   Future<Box> _openBox() async {
-    return await Hive.openBox(_stampsBox);
+    return await Hive.openBox(_ownedBox);
   }
 
-  /// Guardar una lista de stamps (sobrescribe todo).
-  Future<void> saveStamps(List<Stamp> stamps) async {
+  /// Obtener mapa de estampas poseídas con su conteo de repetidas.
+  Future<Map<int, int>> getOwnedMap() async {
     final box = await _openBox();
-    final Map<String, dynamic> data = {};
-    for (final stamp in stamps) {
-      data[stamp.id.toString()] = stamp.toJson();
-    }
-    await box.putAll(data);
-  }
-
-  /// Obtener todos los stamps guardados localmente.
-  Future<List<Stamp>> getStamps() async {
-    final box = await _openBox();
-    final List<Stamp> stamps = [];
+    final map = <int, int>{};
     for (final key in box.keys) {
       final value = box.get(key);
-      if (value != null) {
-        stamps.add(Stamp.fromJson(Map<String, dynamic>.from(value)));
-      }
+      // Migrar valores antiguos (true) a 0 repetidas
+      map[key as int] = (value is int) ? value : 0;
     }
-    stamps.sort((a, b) => a.id.compareTo(b.id));
-    return stamps;
+    return map;
   }
 
-  /// Marcar o desmarcar un stamp como poseído.
-  Future<void> toggleOwned(int stampId) async {
+  /// Tap en una estampa: si no la tiene, la marca. Si ya la tiene, suma +1 repetida.
+  /// Retorna el nuevo conteo de repetidas (0 = recién marcada, 1+ = repetidas).
+  Future<int> tapStamp(int stampId) async {
     final box = await _openBox();
-    final raw = box.get(stampId.toString());
-    if (raw != null) {
-      final stamp = Stamp.fromJson(Map<String, dynamic>.from(raw));
-      stamp.owned = !stamp.owned;
-      await box.put(stampId.toString(), stamp.toJson());
+    if (box.containsKey(stampId)) {
+      final current = box.get(stampId);
+      final count = (current is int) ? current : 0;
+      final newCount = count + 1;
+      await box.put(stampId, newCount);
+      return newCount;
+    } else {
+      await box.put(stampId, 0);
+      return 0;
     }
   }
 
-  /// Verificar si un stamp específico está guardado.
-  Future<bool> isOwned(int stampId) async {
+  /// Desmarcar una estampa (quitar de la colección).
+  Future<void> removeStamp(int stampId) async {
     final box = await _openBox();
-    final raw = box.get(stampId.toString());
-    if (raw == null) return false;
-    return Map<String, dynamic>.from(raw)['owned'] as bool? ?? false;
+    await box.delete(stampId);
+  }
+
+  /// Decrementar repetidas. Si llega a 0 repetidas, mantiene la estampa como poseída.
+  /// Si ya tiene 0 repetidas, la desmarca completamente.
+  /// Retorna null si se desmarcó, o el nuevo conteo.
+  Future<int?> decrementStamp(int stampId) async {
+    final box = await _openBox();
+    if (!box.containsKey(stampId)) return null;
+    final current = box.get(stampId);
+    final count = (current is int) ? current : 0;
+    if (count <= 0) {
+      await box.delete(stampId);
+      return null;
+    } else {
+      final newCount = count - 1;
+      await box.put(stampId, newCount);
+      return newCount;
+    }
   }
 
   /// Borrar todos los datos locales.
