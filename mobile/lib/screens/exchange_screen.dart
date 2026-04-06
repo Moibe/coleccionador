@@ -4,8 +4,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/exchange_service.dart';
 import '../services/config_service.dart';
 
-/// Tab de Intercambio: muestra QR propio + botón para escanear
-class ExchangeTab extends StatelessWidget {
+/// Tab de Intercambio: muestra QR propio, escáner y resultado — todo inline.
+class ExchangeTab extends StatefulWidget {
   final Map<int, int> ownedMap;
   final String qrData;
 
@@ -13,6 +13,50 @@ class ExchangeTab extends StatelessWidget {
     super.key,
     required this.ownedMap,
     required this.qrData,
+  });
+
+  @override
+  State<ExchangeTab> createState() => _ExchangeTabState();
+}
+
+class _ExchangeTabState extends State<ExchangeTab> {
+  ExchangeResult? _result;
+
+  void _showResult(ExchangeResult result) {
+    setState(() => _result = result);
+  }
+
+  void _clearResult() {
+    setState(() => _result = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_result != null) {
+      return _ExchangeResultBody(
+        result: _result!,
+        onBack: _clearResult,
+      );
+    }
+    return _ExchangeQrBody(
+      ownedMap: widget.ownedMap,
+      qrData: widget.qrData,
+      onResult: _showResult,
+    );
+  }
+}
+
+// ─── QR Panel ───────────────────────────────────────────────────────────────
+
+class _ExchangeQrBody extends StatelessWidget {
+  final Map<int, int> ownedMap;
+  final String qrData;
+  final void Function(ExchangeResult) onResult;
+
+  const _ExchangeQrBody({
+    required this.ownedMap,
+    required this.qrData,
+    required this.onResult,
   });
 
   @override
@@ -72,6 +116,17 @@ class ExchangeTab extends StatelessWidget {
               minimumSize: const Size(double.infinity, 48),
             ),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _simulate(totalStamps),
+            icon: const Icon(Icons.science_outlined, size: 18),
+            label: const Text('Simular escaneo (demo)'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 44),
+              foregroundColor: Colors.grey[600],
+              side: BorderSide(color: Colors.grey.shade400),
+            ),
+          ),
           const SizedBox(height: 12),
           Text(
             'Muestra tu QR al otro coleccionista,\no escanea el suyo para comparar.',
@@ -85,8 +140,8 @@ class ExchangeTab extends StatelessWidget {
     );
   }
 
-  void _openScanner(BuildContext context, int totalStamps) {
-    Navigator.of(context).push(
+  Future<void> _openScanner(BuildContext context, int totalStamps) async {
+    final result = await Navigator.of(context).push<ExchangeResult>(
       MaterialPageRoute(
         builder: (_) => ScannerScreen(
           myMap: ownedMap,
@@ -94,10 +149,30 @@ class ExchangeTab extends StatelessWidget {
         ),
       ),
     );
+    if (result != null) onResult(result);
+  }
+
+  void _simulate(int totalStamps) {
+    final fakeMap = <int, int>{};
+    for (var i = 2; i <= totalStamps; i += 2) {
+      final repeats = (i % 10 == 0) ? 2 : (i % 6 == 0) ? 1 : 0;
+      fakeMap[i] = repeats;
+    }
+    for (var i in [3, 7, 15, 31, 55, 77, 103, 201, 305, 450, 600, 750]) {
+      if (i <= totalStamps) fakeMap[i] = 0;
+    }
+
+    final result = ExchangeService.compare(
+      myMap: ownedMap,
+      theirMap: fakeMap,
+      totalStamps: totalStamps,
+    );
+    onResult(result);
   }
 }
 
-/// Pantalla de escaneo con cámara
+// ─── Scanner ────────────────────────────────────────────────────────────────
+
 class ScannerScreen extends StatefulWidget {
   final Map<int, int> myMap;
   final int totalStamps;
@@ -147,11 +222,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       totalStamps: widget.totalStamps,
     );
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => ExchangeResultScreen(result: result),
-      ),
-    );
+    Navigator.of(context).pop(result);
   }
 
   @override
@@ -183,11 +254,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-/// Pantalla de resultados del intercambio
-class ExchangeResultScreen extends StatelessWidget {
-  final ExchangeResult result;
+// ─── Result body (inline, sin Scaffold propio) ───────────────────────────────
 
-  const ExchangeResultScreen({super.key, required this.result});
+class _ExchangeResultBody extends StatelessWidget {
+  final ExchangeResult result;
+  final VoidCallback onBack;
+
+  const _ExchangeResultBody({required this.result, required this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -196,58 +269,77 @@ class ExchangeResultScreen extends StatelessWidget {
     final iCanGiveIds = iCanGive.keys.toList()..sort();
     final theyCanGiveIds = theyCanGive.keys.toList()..sort();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Resultado del intercambio'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Resumen
-          _buildSummaryCard(context),
-          const SizedBox(height: 16),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Botón volver arriba
+        Row(
+          children: [
+            IconButton.outlined(
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Volver',
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Resultado del intercambio',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
 
-          // Matches mutuos
-          _buildSectionHeader(
-            context,
-            icon: Icons.swap_horiz,
-            title: 'Intercambio posible',
-            subtitle: '${result.mutualExchangeCount} estampas',
-            color: Colors.green,
-          ),
-          const SizedBox(height: 16),
+        // Resumen
+        _buildSummaryCard(context),
+        const SizedBox(height: 16),
 
-          // Lo que yo le puedo dar
-          _buildSectionHeader(
-            context,
-            icon: Icons.arrow_forward,
-            title: 'Tú le puedes dar',
-            subtitle: '${iCanGiveIds.length} estampas',
-            color: Colors.blue,
-          ),
-          const SizedBox(height: 8),
-          if (iCanGiveIds.isEmpty)
-            const _EmptyMessage('No tienes repetidas que el otro necesite')
-          else
-            _buildStampChips(context, iCanGiveIds, iCanGive, Colors.blue),
-          const SizedBox(height: 16),
+        // Matches mutuos
+        _buildSectionHeader(
+          context,
+          icon: Icons.swap_horiz,
+          title: 'Intercambio posible',
+          subtitle: '${result.mutualExchangeCount} estampas',
+          color: Colors.green,
+        ),
+        const SizedBox(height: 16),
 
-          // Lo que me puede dar
-          _buildSectionHeader(
-            context,
-            icon: Icons.arrow_back,
-            title: 'Te puede dar',
-            subtitle: '${theyCanGiveIds.length} estampas',
-            color: Colors.orange,
-          ),
-          const SizedBox(height: 8),
-          if (theyCanGiveIds.isEmpty)
-            const _EmptyMessage('El otro no tiene repetidas que tú necesites')
-          else
-            _buildStampChips(context, theyCanGiveIds, theyCanGive, Colors.orange),
-        ],
-      ),
+        // Lo que yo le puedo dar
+        _buildSectionHeader(
+          context,
+          icon: Icons.arrow_forward,
+          title: 'Tú le puedes dar',
+          subtitle: '${iCanGiveIds.length} estampas',
+          color: Colors.blue,
+        ),
+        const SizedBox(height: 8),
+        if (iCanGiveIds.isEmpty)
+          const _EmptyMessage('No tienes repetidas que el otro necesite')
+        else
+          _buildStampChips(context, iCanGiveIds, iCanGive, Colors.blue),
+        const SizedBox(height: 16),
+
+        // Lo que me puede dar
+        _buildSectionHeader(
+          context,
+          icon: Icons.arrow_back,
+          title: 'Te puede dar',
+          subtitle: '${theyCanGiveIds.length} estampas',
+          color: Colors.orange,
+        ),
+        const SizedBox(height: 8),
+        if (theyCanGiveIds.isEmpty)
+          const _EmptyMessage('El otro no tiene repetidas que tú necesites')
+        else
+          _buildStampChips(context, theyCanGiveIds, theyCanGive, Colors.orange),
+        const SizedBox(height: 16),
+
+        // Botón volver abajo
+        OutlinedButton.icon(
+          onPressed: onBack,
+          icon: const Icon(Icons.qr_code),
+          label: const Text('Nueva comparación'),
+        ),
+      ],
     );
   }
 
@@ -268,10 +360,8 @@ class ExchangeResultScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildStat(context, 'Te faltan', '${result.myMissing}',
-                    color: Colors.red),
-                _buildStat(context, 'Le faltan', '${result.theirMissing}',
-                    color: Colors.red),
+                _buildStat(context, 'Te faltan', '${result.myMissing}', color: Colors.red),
+                _buildStat(context, 'Le faltan', '${result.theirMissing}', color: Colors.red),
               ],
             ),
           ],
@@ -280,8 +370,7 @@ class ExchangeResultScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStat(BuildContext context, String label, String value,
-      {Color? color}) {
+  Widget _buildStat(BuildContext context, String label, String value, {Color? color}) {
     return Column(
       children: [
         Text(label, style: Theme.of(context).textTheme.bodySmall),
@@ -332,19 +421,41 @@ class ExchangeResultScreen extends StatelessWidget {
     Color color,
   ) {
     return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+      spacing: 4,
+      runSpacing: 4,
+      alignment: WrapAlignment.center,
       children: ids.map((id) {
         final count = countsMap[id] ?? 0;
-        return Chip(
-          label: Text(
-            count > 1 ? '#$id ×$count' : '#$id',
-            style: const TextStyle(fontSize: 12),
+        return Container(
+          width: 72,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withOpacity(0.3)),
           ),
-          backgroundColor: color.withOpacity(0.1),
-          side: BorderSide(color: color.withOpacity(0.3)),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
+          child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$id',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: color.withOpacity(0.85),
+                      ),
+                    ),
+                    Text(
+                      count > 1 ? 'x$count' : '',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: color.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
         );
       }).toList(),
     );

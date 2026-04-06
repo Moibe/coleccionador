@@ -42,4 +42,6 @@
             <data android:mimeType="text/plain"/>
         </intent>
     </queries>
+    <!-- Camera permission for QR scanning in Intercambio tab -->
+    <uses-permission android:name="android.permission.CAMERA" />
 </manifest>

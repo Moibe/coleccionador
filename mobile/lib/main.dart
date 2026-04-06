@@ -76,19 +76,21 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTab() {
     switch (_selectedTab) {
       case 0:
+        return const StatsTab();
+      case 1:
         return CollectorTab(
           ownedMap: _ownedMap,
           onTap: _tap,
           onDecrement: _decrement,
           onRemove: _remove,
         );
-      case 1:
+      case 2:
         return RepeatsTab(
           ownedMap: _ownedMap,
           onTap: _tap,
           onDecrement: _decrement,
         );
-      case 2:
+      case 3:
         return ExchangeTab(
           ownedMap: _ownedMap,
           qrData: ExchangeService.encode(
@@ -113,7 +115,13 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedTab,
         onDestinationSelected: (index) => setState(() => _selectedTab = index),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
+            label: 'Estadísticas',
+          ),
           NavigationDestination(
             icon: Icon(Icons.grid_view),
             selectedIcon: Icon(Icons.grid_view_rounded),
@@ -292,7 +300,7 @@ class _CollectorTabState extends State<CollectorTab> {
                             GestureDetector(
                               onTap: () => widget.onDecrement(stampId),
                               child: const Text(
-                                '−',
+                                '-',
                                 style: TextStyle(
                                   color: Colors.white70,
                                   fontSize: 16,
@@ -400,7 +408,7 @@ class RepeatsTab extends StatelessWidget {
                       onTap: () => onDecrement(stampId),
                       child: const Padding(
                         padding: EdgeInsets.all(8),
-                        child: Text('−', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                        child: Text('-', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                       ),
                     ),
                     Container(
@@ -431,6 +439,18 @@ class RepeatsTab extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Tab de Estadísticas (vacío por ahora)
+class StatsTab extends StatelessWidget {
+  const StatsTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text('Estadísticas'),
     );
   }
 }
